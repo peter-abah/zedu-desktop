@@ -12,7 +12,11 @@ void main() {
     timezone: 'Africa/Lagos',
   );
 
-  Future<void> openDialog(WidgetTester tester, EditProfileSave onSave) async {
+  Future<void> openDialog(
+    WidgetTester tester,
+    EditProfileSave onSave, [
+    ProfileAccount profile = account,
+  ]) async {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     tester.view.physicalSize = const Size(1280, 900);
@@ -22,7 +26,7 @@ void main() {
         Builder(
           builder: (context) => Scaffold(
             body: TextButton(
-              onPressed: () => showEditProfileDialog(context, account, onSave),
+              onPressed: () => showEditProfileDialog(context, profile, onSave),
               child: const Text('Open'),
             ),
           ),
@@ -105,6 +109,40 @@ void main() {
 
     expect(find.text('Select a country from the list'), findsNothing);
     expect(saved?.country, 'Nigeria');
+  });
+
+  testWidgets('submits a valid country typed over a previous one', (
+    tester,
+  ) async {
+    ProfileAccount? saved;
+    await openDialog(tester, (account) async {
+      saved = account;
+      return null;
+    }, account.copyWith(country: 'Nigeria'));
+
+    await tester.enterText(find.byType(TextFormField).last, 'Ghana');
+    await tester.tap(find.text('Save changes'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Select a country from the list'), findsNothing);
+    expect(saved?.country, 'Ghana');
+  });
+
+  testWidgets('clearing the country never submits the previous country', (
+    tester,
+  ) async {
+    ProfileAccount? saved;
+    await openDialog(tester, (account) async {
+      saved = account;
+      return null;
+    }, account.copyWith(country: 'Nigeria'));
+
+    await tester.enterText(find.byType(TextFormField).last, '');
+    await tester.tap(find.text('Save changes'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Select a country from the list'), findsNothing);
+    expect(saved?.country, isEmpty);
   });
 
   group('saving', () {

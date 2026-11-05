@@ -307,7 +307,21 @@ class ChatHistoryNotifier extends ChangeNotifier {
     }
   }
 
-  Future<void> sendMessage(
+  /// Drops a preserved failed-send draft, but only when it still holds the
+  /// text that just sent: anything newer the user typed meanwhile is theirs.
+  Future<void> _clearFailedDraft(String content) async {
+    try {
+      final drafts = ref.read(dmDraftStoreProvider);
+      if (drafts.peek(channelId)?.text == content) {
+        await drafts.clear(channelId);
+      }
+    } catch (_) {}
+  }
+
+  /// Sends [content] with an optimistic item, and reports whether the send
+  /// went through. A rejected send leaves the item as `failed` (with a retry);
+  /// the caller keeps the text so it is not lost.
+  Future<bool> sendMessage(
     String content, {
     List<XFile>? media,
     List<dynamic>? mentions,
@@ -362,6 +376,7 @@ class ChatHistoryNotifier extends ChangeNotifier {
         }
         return m;
       }).toList();
+      return true;
     } catch (_) {
       messages = messages.map((m) {
         if (m['id'] == tempId) {
@@ -371,11 +386,16 @@ class ChatHistoryNotifier extends ChangeNotifier {
         }
         return m;
       }).toList();
+      // The failed item stays in the list with a retry; the composer
+      // preserves the text as a draft so it survives this provider going away.
+      return false;
     } finally {
       notifyListeners();
     }
   }
 
+  /// Retries a failed message. A rejected retry keeps the item as `failed`
+  /// with its draft preserved; a successful one drops the preserved draft.
   Future<void> retryMessage(String messageId) async {
     final idx = messages.indexWhere((m) => m['id'] == messageId);
     if (idx == -1) return;
@@ -411,6 +431,7 @@ class ChatHistoryNotifier extends ChangeNotifier {
         }
         return m;
       }).toList();
+      await _clearFailedDraft(content);
     } catch (_) {
       messages = messages.map((m) {
         if (m['id'] == messageId) {
@@ -420,6 +441,8 @@ class ChatHistoryNotifier extends ChangeNotifier {
         }
         return m;
       }).toList();
+      // The failed item keeps its preserved draft, so the text still
+      // survives this provider going away.
     } finally {
       notifyListeners();
     }

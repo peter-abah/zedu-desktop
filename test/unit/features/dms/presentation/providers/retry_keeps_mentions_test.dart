@@ -26,6 +26,21 @@ class _FakeAuthNotifier extends AuthNotifier {
   );
 }
 
+class _FakeDraftStorage extends Fake implements SecureStorageService {
+  final values = <String, String>{};
+
+  @override
+  Future<String?> readData(String key) async => values[key];
+
+  @override
+  Future<void> writeData(String key, String value) async {
+    values[key] = value;
+  }
+
+  @override
+  Future<void> deleteValue(String key) async => values.remove(key);
+}
+
 void main() {
   test('retrying a failed message sends its mentions again', () async {
     final repo = _MockDmRepository();
@@ -50,6 +65,15 @@ void main() {
       overrides: [
         dmRepositoryProvider.overrideWithValue(repo),
         authNotifierProvider.overrideWith(_FakeAuthNotifier.new),
+        // Failed sends preserve their text as a draft; keep the real store
+        // (and its workspace chain) out of the unit test.
+        dmDraftStoreProvider.overrideWith(
+          (ref) => DmDraftStore(
+            _FakeDraftStorage(),
+            userId: 'user-1',
+            orgId: 'org-1',
+          ),
+        ),
       ],
     );
     addTearDown(container.dispose);

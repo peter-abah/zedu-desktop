@@ -164,6 +164,7 @@ void main() {
 
   _deleteTests();
   _retryTests();
+  _failedSendDraftTests();
   _clearHistoryTests();
   _loadErrorTests();
   group('ChatHistoryNotifier.saveEdit', () {
@@ -615,6 +616,15 @@ void _retryTests() {
         overrides: [
           dmRepositoryProvider.overrideWithValue(mockRepository),
           authNotifierProvider.overrideWith(_FakeAuthNotifier.new),
+          // Retry touches the draft store; keep the real provider (and its
+          // workspace chain) out of the unit test.
+          dmDraftStoreProvider.overrideWith(
+            (ref) => DmDraftStore(
+              _FakeDraftStorage(),
+              userId: 'user-1',
+              orgId: 'org-1',
+            ),
+          ),
         ],
       );
       notifier = container
@@ -731,6 +741,144 @@ void _retryTests() {
         () => autoNotifier.notifyListeners(),
         throwsA(isA<FlutterError>()),
       );
+    });
+  });
+}
+
+class _FakeDraftStorage extends Fake implements SecureStorageService {
+  final values = <String, String>{};
+
+  @override
+  Future<String?> readData(String key) async => values[key];
+
+  @override
+  Future<void> writeData(String key, String value) async {
+    values[key] = value;
+  }
+
+  @override
+  Future<void> deleteValue(String key) async => values.remove(key);
+}
+
+void _failedSendDraftTests() {
+  group('ChatHistoryNotifier failed sends keep their text (#2624)', () {
+    late MockDmRepository mockRepository;
+    late ProviderContainer container;
+    late ChatHistoryNotifier notifier;
+    late DmDraftStore drafts;
+
+    setUp(() async {
+      mockRepository = MockDmRepository();
+      when(
+        () => mockRepository.getMessages(any(), page: any(named: 'page')),
+      ).thenAnswer((_) async => []);
+      drafts = DmDraftStore(
+        _FakeDraftStorage(),
+        userId: 'user-1',
+        orgId: 'org-1',
+      );
+      container = ProviderContainer(
+        overrides: [
+          dmRepositoryProvider.overrideWithValue(mockRepository),
+          authNotifierProvider.overrideWith(_FakeAuthNotifier.new),
+          dmDraftStoreProvider.overrideWith((ref) => drafts),
+        ],
+      );
+      notifier = container
+          .listen(chatHistoryProvider('channel-xyz'), (_, _) {})
+          .read();
+      await pumpEventQueue();
+    });
+
+    tearDown(() => container.dispose());
+
+    void failSends() {
+      when(
+        () => mockRepository.sendMessage(
+          any(),
+          any(),
+          media: any(named: 'media'),
+          mentions: any(named: 'mentions'),
+          isChannel: any(named: 'isChannel'),
+        ),
+      ).thenThrow(Exception('network error'));
+    }
+
+    void succeedSends({String threadId = 'thread-1'}) {
+      when(
+        () => mockRepository.sendMessage(
+          any(),
+          any(),
+          media: any(named: 'media'),
+          mentions: any(named: 'mentions'),
+          isChannel: any(named: 'isChannel'),
+        ),
+      ).thenAnswer((_) async => threadId);
+    }
+
+    test('a rejected channel send keeps a failed item for retry', () async {
+      failSends();
+
+      final sent = await notifier.sendMessage('hello', isChannel: true);
+
+      expect(sent, isFalse);
+      expect(notifier.messages, hasLength(1));
+      expect(notifier.messages.first['content'], 'hello');
+      expect(notifier.messages.first['status'], 'failed');
+      expect(notifier.messages.first['is_channel'], isTrue);
+    });
+
+    test(
+      'a sent channel message reports success with no failed state',
+      () async {
+        succeedSends();
+
+        final sent = await notifier.sendMessage('hello', isChannel: true);
+
+        expect(sent, isTrue);
+        expect(notifier.messages.first['status'], isNull);
+        expect(notifier.messages.first['thread_id'], 'thread-1');
+        expect(drafts.peek('channel-xyz'), isNull);
+      },
+    );
+
+    test(
+      'a successful retry sends over the channel route and clears the draft',
+      () async {
+        failSends();
+        await notifier.sendMessage('hello', isChannel: true);
+        final failedId = notifier.messages.first['id'] as String;
+        // The composer preserves the failed text; the retry drops it on success.
+        await drafts.save('channel-xyz', 'hello');
+        succeedSends(threadId: 'thread-retry');
+
+        await notifier.retryMessage(failedId);
+
+        final sends = verify(
+          () => mockRepository.sendMessage(
+            'channel-xyz',
+            'hello',
+            media: null,
+            isChannel: captureAny(named: 'isChannel'),
+          ),
+        ).captured;
+        // The first send and the retry both go over the channel route.
+        expect(sends, [true, true]);
+        expect(notifier.messages.first['status'], isNull);
+        expect(drafts.peek('channel-xyz'), isNull);
+      },
+    );
+
+    test('a rejected retry keeps the failed item and its draft', () async {
+      failSends();
+      await notifier.sendMessage('hello', isChannel: true);
+      final failedId = notifier.messages.first['id'] as String;
+      await drafts.save('channel-xyz', 'hello');
+
+      await notifier.retryMessage(failedId);
+
+      expect(notifier.messages.first['status'], 'failed');
+      expect(drafts.peek('channel-xyz')?.text, 'hello');
     });
   });
 }

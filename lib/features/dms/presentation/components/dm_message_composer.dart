@@ -76,6 +76,10 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
 
   Timer? _draftSaveDebounce;
 
+  /// Set around the post-send clear so the emptied box doesn't schedule a
+  /// save of '' that would wipe the draft a failed send just preserved.
+  bool _skipNextDraftSave = false;
+
   /// Draft store for the current user and org. Held in a field because `ref`
   /// can't be used in [dispose], and a flush must go to the store the draft
   /// was typed against.
@@ -120,9 +124,14 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
         Future.microtask(previousHistory.cancelEditing);
       } else {
         final previousText = _controller.text;
-        Future.microtask(
-          () => previousDrafts.save(previousChannel, previousText),
-        );
+        // An empty box holds nothing to save; skipping the write also keeps
+        // a failed send's preserved draft, which the send already cleared
+        // the box of.
+        if (previousText.trim().isNotEmpty) {
+          Future.microtask(
+            () => previousDrafts.save(previousChannel, previousText),
+          );
+        }
       }
       _drafts = ref.read(dmDraftStoreProvider);
       _draftChannelId = _draftKey;
@@ -194,6 +203,11 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
     if (mounted) setState(() {});
 
     if (_isEditMode) return;
+
+    if (_skipNextDraftSave) {
+      _skipNextDraftSave = false;
+      return;
+    }
 
     final text = _controller.text;
     _draftSaveDebounce?.cancel();
@@ -291,19 +305,60 @@ class DmMessageComposerState extends ConsumerState<DmMessageComposer> {
       _focusNode.requestFocus();
       return;
     } else {
+      // The draft stays until the send succeeds, so a rejected send keeps
+      // its text (as a failed item with a retry, plus the preserved draft)
+      // instead of losing it. Clearing only on success also needs the box
+      // check: anything typed while the send was in flight is already saved
+      // by the debounced writer and must not be wiped.
+      final sentText = _controller.text;
+      final sentDraftKey = _draftKey;
+      final sentDrafts = _drafts;
       ref
           .read(chatHistoryProvider(widget.channelId))
           .sendMessage(
             text,
             media: [..._pendingFiles, ?_voiceNote],
             isChannel: widget.isChannel,
-          );
+          )
+          .then((sent) {
+            if (sent) {
+              if (!mounted) {
+                // Left the conversation mid-send: drop the preserved text
+                // only when nothing else took its place since.
+                if (sentDrafts.peek(sentDraftKey)?.text == sentText) {
+                  sentDrafts.clear(sentDraftKey);
+                }
+                return;
+              }
+              if (_controller.text.trim().isEmpty) {
+                _drafts.clear(_draftKey);
+              }
+              return;
+            }
+            // The send failed: the failed item in the list offers a retry,
+            // and the text is preserved as a draft so it also survives the
+            // history being disposed (channel switch, restart).
+            if (sentText.trim().isEmpty) return;
+            if (!mounted) {
+              // Same channel, new composer state: only fill a gap, never
+              // overwrite newer text typed since.
+              final preserved = sentDrafts.peek(sentDraftKey)?.text;
+              if (preserved == null || preserved == sentText) {
+                sentDrafts.save(sentDraftKey, sentText);
+              }
+              return;
+            }
+            if (_controller.text.trim().isEmpty) {
+              _drafts.save(_draftKey, sentText);
+            }
+          });
       widget.onSend?.call(text);
     }
 
-    // The message is out, so the draft no longer exists.
+    // The message is out of the box. The empty box must not schedule a save
+    // of '' that would wipe the draft a failed send preserves.
     _draftSaveDebounce?.cancel();
-    _drafts.clear(_draftKey);
+    _skipNextDraftSave = _controller.text.isNotEmpty;
 
     _controller.clear();
     // Saving an edit sends nothing, so a waiting voice note or file is kept.

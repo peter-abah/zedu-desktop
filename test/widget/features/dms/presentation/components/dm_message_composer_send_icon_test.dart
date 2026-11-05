@@ -54,7 +54,7 @@ void main() {
     history = SendIconHistory();
     when(
       () => history.sendMessage(any(), media: any(named: 'media')),
-    ).thenAnswer((_) async {});
+    ).thenAnswer((_) async => true);
   });
 
   tearDown(() {
@@ -208,5 +208,82 @@ void main() {
     controller(tester).clear();
     await tester.pump();
     expectActive(tester, false);
+  });
+
+  testWidgets('a rejected send preserves its text as a draft (#2624)', (
+    tester,
+  ) async {
+    final drafts = DmDraftStore(
+      SendIconStorage(),
+      userId: 'user-1',
+      orgId: 'org-1',
+    );
+    when(
+      () => history.sendMessage(any(), media: any(named: 'media')),
+    ).thenAnswer((_) async => false);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          dmDraftStoreProvider.overrideWith((ref) => drafts),
+          chatHistoryProvider('dm-1').overrideWith((ref) => history),
+        ],
+        child: buildTestMaterialApp(
+          const Scaffold(
+            body: DmMessageComposer(
+              recipientName: 'Test User',
+              channelId: 'dm-1',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.enterText(find.byType(TextField), 'hello');
+    await tester.pump();
+    await tester.tap(find.byIcon(Icons.send_rounded));
+    await tester.pumpAndSettle();
+
+    // The box clears for the optimistic send, but the rejected text stays
+    // in the draft store instead of being lost.
+    expect(controller(tester).text, isEmpty);
+    expect(drafts.peek('dm-1')?.text, 'hello');
+    verify(
+      () => history.sendMessage('hello', media: any(named: 'media')),
+    ).called(1);
+  });
+
+  testWidgets('a sent message clears its draft (#2624)', (tester) async {
+    final drafts = DmDraftStore(
+      SendIconStorage(),
+      userId: 'user-1',
+      orgId: 'org-1',
+    );
+    await drafts.save('dm-1', 'hello');
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          dmDraftStoreProvider.overrideWith((ref) => drafts),
+          chatHistoryProvider('dm-1').overrideWith((ref) => history),
+        ],
+        child: buildTestMaterialApp(
+          const Scaffold(
+            body: DmMessageComposer(
+              recipientName: 'Test User',
+              channelId: 'dm-1',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The saved draft is restored, then sent and cleared on success.
+    expect(controller(tester).text, 'hello');
+    await tester.tap(find.byIcon(Icons.send_rounded));
+    await tester.pumpAndSettle();
+
+    expect(controller(tester).text, isEmpty);
+    expect(drafts.peek('dm-1'), isNull);
   });
 }

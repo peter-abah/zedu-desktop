@@ -111,6 +111,20 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
         ref
             .read(dmConversationActionsProvider.notifier)
             .togglePinned(conversation.channelId);
+      case 'pinned_messages':
+        await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Pinned messages'),
+            content: const Text('No pinned messages yet.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        );
       case 'search_in_conversation':
         await _showConversationSearch();
       case 'view_files':
@@ -129,6 +143,18 @@ class _DmChatAreaState extends ConsumerState<DmChatArea> {
               .read(chatHistoryProvider(conversation.channelId))
               .clearLocalHistory();
           _showActionNotice('History cleared on this device.');
+        }
+      case 'block_user':
+        final blockConfirmed = await _confirmConversationAction(
+          title: 'Block ${conversation.displayName}?',
+          message:
+              'Block ${conversation.displayName}? You will no longer receive '
+              'messages from them.',
+          confirmLabel: 'Block user',
+          destructive: true,
+        );
+        if (blockConfirmed && mounted) {
+          _showActionNotice('${conversation.displayName} blocked.');
         }
       case 'delete_conversation':
         final confirmed = await _confirmConversationAction(
@@ -658,8 +684,8 @@ class _DmChatHeader extends StatelessWidget {
       bool destructive = false,
     }) => PopupMenuItem<String>(
       value: value,
-      height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Text(
         label,
         style: destructive
@@ -766,7 +792,6 @@ class _DmChatHeader extends StatelessWidget {
             elevation: 8,
             shadowColor: colors.textPrimary.withValues(alpha: 0.16),
             menuPadding: const EdgeInsets.symmetric(vertical: 4),
-            constraints: const BoxConstraints.tightFor(width: 240),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
               side: BorderSide(color: colors.divider),
@@ -784,8 +809,14 @@ class _DmChatHeader extends StatelessWidget {
             onSelected: onMenuAction,
             itemBuilder: (context) => [
               menuItem('view_profile', 'View profile'),
-              menuItem('mute_notifications', 'Mute notifications'),
-              menuItem('pin_conversation', 'Pin conversation'),
+              menuItem(
+                'mute_notifications',
+                isMuted ? 'Unmute notifications' : 'Mute notifications',
+              ),
+              menuItem(
+                'pin_conversation',
+                isPinned ? 'Unpin conversation' : 'Pin conversation',
+              ),
               menuItem('pinned_messages', 'Pinned messages'),
               menuItem('search_in_conversation', 'Search in conversation'),
               menuItem('view_files', 'View files'),

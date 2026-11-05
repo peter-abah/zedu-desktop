@@ -140,4 +140,64 @@ void main() {
       expect(decoration.focusedErrorBorder, isNotNull);
     });
   });
+
+  group('AppTextField obscureText sync', () {
+    bool renderedObscure(WidgetTester tester) =>
+        tester.widget<TextField>(find.byType(TextField)).obscureText;
+
+    Future<void> pumpField(
+      WidgetTester tester,
+      TextEditingController controller, {
+      required bool isPassword,
+    }) async {
+      await tester.pumpWidget(
+        buildTestMaterialApp(
+          Scaffold(
+            body: AppTextField(
+              controller: controller,
+              hint: 'Field',
+              isPassword: isPassword,
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('non-password to password hides text', (tester) async {
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+
+      await pumpField(tester, controller, isPassword: false);
+      expect(renderedObscure(tester), isFalse);
+
+      await pumpField(tester, controller, isPassword: true);
+      expect(renderedObscure(tester), isTrue);
+    });
+
+    testWidgets('password to non-password shows text', (tester) async {
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+
+      await pumpField(tester, controller, isPassword: true);
+      expect(renderedObscure(tester), isTrue);
+
+      await pumpField(tester, controller, isPassword: false);
+      expect(renderedObscure(tester), isFalse);
+    });
+
+    testWidgets('same-value rebuild preserves user toggle', (tester) async {
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+
+      await pumpField(tester, controller, isPassword: true);
+      expect(renderedObscure(tester), isTrue);
+
+      await tester.tap(find.byType(IconButton));
+      await tester.pump();
+      expect(renderedObscure(tester), isFalse);
+
+      await pumpField(tester, controller, isPassword: true);
+      expect(renderedObscure(tester), isFalse);
+    });
+  });
 }

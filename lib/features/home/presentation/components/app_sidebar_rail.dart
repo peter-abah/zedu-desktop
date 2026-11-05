@@ -57,6 +57,7 @@ class _AppSidebarRailState extends ConsumerState<AppSidebarRail> {
     ValueChanged<HomeSidebarType> select,
   ) {
     final colors = context.colors;
+    final hasUnread = ref.watch(hasUnreadNotificationsProvider);
     return Container(
       width: AppSidebarRail.width,
       decoration: BoxDecoration(
@@ -103,8 +104,7 @@ class _AppSidebarRailState extends ConsumerState<AppSidebarRail> {
           const Spacer(),
           _RailBottomIcon(
             icon: Icons.notifications_none_outlined,
-            // No unread-count source yet; show the dot once there is one.
-            hasNotification: false,
+            hasNotification: hasUnread,
             tooltip: 'Notifications',
             onTap: () {
               showDialog<void>(

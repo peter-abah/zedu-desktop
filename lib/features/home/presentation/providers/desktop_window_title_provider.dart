@@ -25,6 +25,22 @@ String _formatChannelTitle(String name) {
   return clean[0].toUpperCase() + clean.substring(1);
 }
 
+/// True when any DM (excluding deleted ones) or channel has unread messages.
+///
+/// Drives the sidebar bell dot. It reads the same two lists the window title
+/// derives its unread count from, so the dot and the title stay consistent.
+final hasUnreadNotificationsProvider = Provider<bool>((ref) {
+  final deletedIds = ref.watch(
+    dmConversationActionsProvider.select((a) => a.deletedIds),
+  );
+  final dms = ref.watch(dmListProvider).value ?? const [];
+  final channels = ref.watch(channelProvider).value ?? const [];
+  return dms.any(
+        (c) => c.unreadCount > 0 && !deletedIds.contains(c.channelId),
+      ) ||
+      channels.any((c) => c.unreadCount > 0);
+});
+
 final desktopWindowTitleProvider = Provider<String>((ref) {
   final isAuthenticated = ref.watch(
     authNotifierProvider.select((s) => s.status == AuthStatus.authenticated),

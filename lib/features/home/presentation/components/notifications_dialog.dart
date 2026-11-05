@@ -3,10 +3,10 @@ import 'package:zedu/features/features.dart';
 
 /// Panel opened from the notifications bell in the sidebar rail.
 ///
-/// Lists the DMs that have unread messages and opens one when clicked. There
-/// is no mentions feed yet, so the empty state shows whenever no DM is
-/// unread. Real incoming-message notifications are still delivered by
-/// `NotificationService`.
+/// Lists the DMs and channels that have unread messages and opens one when
+/// clicked. There is no mentions feed yet, so the empty state shows whenever
+/// no DM and no channel is unread. Real incoming-message notifications are
+/// still delivered by `NotificationService`.
 class NotificationsDialog extends ConsumerWidget {
   const NotificationsDialog({super.key});
 
@@ -26,16 +26,46 @@ class NotificationsDialog extends ConsumerWidget {
     }
   }
 
+  void _openChannel(BuildContext context, WidgetRef ref, Channel channel) {
+    // Read before popping: the dialog's context is gone afterwards.
+    final router = GoRouter.maybeOf(context);
+    ref
+        .read(activeChatProvider.notifier)
+        .selectChannel(channel.name, channelId: channel.id);
+    Navigator.of(context).pop();
+    if (router != null &&
+        router.routerDelegate.currentConfiguration.uri.path != AppRouter.home) {
+      router.go(AppRouter.home);
+    }
+  }
+
+  void _retry(WidgetRef ref) {
+    ref.read(dmListProvider.notifier).refresh();
+    ref.invalidate(channelProvider);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     final dmState = ref.watch(dmListProvider);
+    final channelState = ref.watch(channelProvider);
     final deletedIds = ref.watch(
       dmConversationActionsProvider.select((a) => a.deletedIds),
     );
-    final unread = (dmState.value ?? const <DmConversation>[])
+    final unreadDms = (dmState.value ?? const <DmConversation>[])
         .where((c) => c.unreadCount > 0 && !deletedIds.contains(c.channelId))
         .toList();
+    final unreadChannels = (channelState.value ?? const <Channel>[])
+        .where((c) => c.unreadCount > 0 && !c.archived)
+        .toList();
+    // A failed load must not read as "caught up": show a retry instead.
+    final hasError =
+        (unreadDms.isEmpty && dmState.hasError) ||
+        (unreadChannels.isEmpty && channelState.hasError);
+    final isLoading =
+        unreadDms.isEmpty &&
+        unreadChannels.isEmpty &&
+        (dmState.isLoading || channelState.isLoading);
 
     return Dialog(
       insetPadding: const EdgeInsets.only(bottom: 80, left: 74),
@@ -79,12 +109,14 @@ class NotificationsDialog extends ConsumerWidget {
               ),
             ),
             Divider(height: 1, color: colors.divider),
-            if (unread.isEmpty && dmState.isLoading)
+            if (hasError)
+              _LoadError(onRetry: () => _retry(ref))
+            else if (isLoading)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 40),
                 child: CircularProgressIndicator(),
               )
-            else if (unread.isEmpty)
+            else if (unreadDms.isEmpty && unreadChannels.isEmpty)
               const _EmptyState()
             else
               ConstrainedBox(
@@ -93,11 +125,16 @@ class NotificationsDialog extends ConsumerWidget {
                   shrinkWrap: true,
                   padding: const EdgeInsets.symmetric(vertical: 6),
                   children: [
-                    for (final conversation in unread)
+                    for (final conversation in unreadDms)
                       _UnreadDmRow(
                         conversation: conversation,
                         onTap: () =>
                             _openConversation(context, ref, conversation),
+                      ),
+                    for (final channel in unreadChannels)
+                      _UnreadChannelRow(
+                        channel: channel,
+                        onTap: () => _openChannel(context, ref, channel),
                       ),
                   ],
                 ),
@@ -195,6 +232,92 @@ class _UnreadDmRow extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _UnreadChannelRow extends StatelessWidget {
+  const _UnreadChannelRow({required this.channel, required this.onTap});
+
+  final Channel channel;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+
+    return InkWell(
+      onTap: onTap,
+      mouseCursor: SystemMouseCursors.click,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 16,
+              backgroundColor: colors.primaryBg,
+              child: Text(
+                '#',
+                style: TextStyle(fontSize: 13, color: colors.primary),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                channel.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: colors.textPrimary,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: colors.primary,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '${channel.unreadCount}',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: colors.onPrimary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LoadError extends StatelessWidget {
+  const _LoadError({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+      child: Column(
+        children: [
+          Text(
+            "Couldn't load notifications.",
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 14, color: colors.textPrimary),
+          ),
+          const SizedBox(height: 12),
+          TextButton(onPressed: onRetry, child: const Text('Retry')),
+        ],
       ),
     );
   }

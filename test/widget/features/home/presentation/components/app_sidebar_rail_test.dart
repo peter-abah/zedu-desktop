@@ -95,4 +95,116 @@ void main() {
       findsOneWidget,
     );
   });
+
+  group('notifications bell dot', () {
+    Finder bellStack() => find.ancestor(
+      of: find.byIcon(Icons.notifications_none_outlined),
+      matching: find.byType(Stack),
+    );
+
+    bool hasDot(WidgetTester tester) {
+      final stack = tester.widget<Stack>(bellStack());
+      return stack.children.whereType<Positioned>().isNotEmpty;
+    }
+
+    Future<void> pumpRail(
+      WidgetTester tester, {
+      List<DmConversation> dms = const [],
+      List<Channel> channels = const [],
+    }) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            dmListProvider.overrideWith(() => _RailDms(dms)),
+            channelProvider.overrideWith(() => _RailChannels(channels)),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.light,
+            home: const Scaffold(
+              body: SizedBox(
+                width: AppSidebarRail.width,
+                height: 600,
+                child: AppSidebarRail(activeType: HomeSidebarType.home),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+    }
+
+    testWidgets('is off when nothing is unread', (tester) async {
+      await pumpRail(
+        tester,
+        dms: [
+          DmConversation(
+            channelId: 'c-ada',
+            username: 'Ada',
+            participantId: 'p-ada',
+            previewMessage: '',
+            unreadCount: 0,
+          ),
+        ],
+      );
+
+      expect(bellStack(), findsOneWidget);
+      expect(hasDot(tester), isFalse);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('is on when a DM is unread', (tester) async {
+      await pumpRail(
+        tester,
+        dms: [
+          DmConversation(
+            channelId: 'c-ada',
+            username: 'Ada',
+            participantId: 'p-ada',
+            previewMessage: '',
+            unreadCount: 3,
+          ),
+        ],
+      );
+
+      expect(hasDot(tester), isTrue);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('is on when a channel is unread', (tester) async {
+      await pumpRail(
+        tester,
+        channels: [
+          Channel(
+            id: 'ch-general',
+            name: 'general',
+            description: '',
+            organisationId: 'org-1',
+            ownerId: 'owner-1',
+            unreadCount: 2,
+          ),
+        ],
+      );
+
+      expect(hasDot(tester), isTrue);
+      expect(tester.takeException(), isNull);
+    });
+  });
+}
+
+class _RailDms extends DmListNotifier {
+  _RailDms(this.conversations);
+
+  final List<DmConversation> conversations;
+
+  @override
+  Future<List<DmConversation>> build() async => conversations;
+}
+
+class _RailChannels extends ChannelNotifier {
+  _RailChannels(this.channels);
+
+  final List<Channel> channels;
+
+  @override
+  Future<List<Channel>> build() async => channels;
 }

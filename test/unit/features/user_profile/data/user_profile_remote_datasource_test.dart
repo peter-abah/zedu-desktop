@@ -100,6 +100,31 @@ void main() {
     });
   });
 
+  group('UserProfileRemoteDataSourceImpl.deleteAccount', () {
+    test('deletes the current user through DELETE /users/me', () async {
+      final mockApi = MockApiBaseService();
+      final datasource = UserProfileRemoteDataSourceImpl(
+        config: const AppConfig(apiBaseUrl: '', usesMockData: false),
+        apiBaseService: mockApi,
+      );
+
+      when(
+        () => mockApi.delete<Map<String, dynamic>>(path: any(named: 'path')),
+      ).thenAnswer(
+        (_) async => const ApiResponseModel<Map<String, dynamic>>(
+          statusCode: 200,
+          data: {'data': null},
+        ),
+      );
+
+      await datasource.deleteAccount();
+
+      verify(
+        () => mockApi.delete<Map<String, dynamic>>(path: '/users/me'),
+      ).called(1);
+    });
+  });
+
   group('UserProfileRemoteDataSourceImpl notification preferences', () {
     late MockApiBaseService api;
     late UserProfileRemoteDataSourceImpl datasource;

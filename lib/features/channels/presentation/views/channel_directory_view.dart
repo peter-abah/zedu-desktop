@@ -147,12 +147,16 @@ class _ChannelDirectoryViewState extends ConsumerState<ChannelDirectoryView> {
                         ),
                       ),
                       subtitle: channel.description.isNotEmpty
-                          ? Text(
-                              channel.description,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: textTheme.bodyMedium?.copyWith(
-                                color: colors.textSecondary,
+                          ? Tooltip(
+                              message: channel.description,
+                              waitDuration: const Duration(milliseconds: 350),
+                              child: Text(
+                                channel.description,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: textTheme.bodyMedium?.copyWith(
+                                  color: colors.textSecondary,
+                                ),
                               ),
                             )
                           : null,

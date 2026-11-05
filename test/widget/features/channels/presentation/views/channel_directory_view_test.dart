@@ -107,4 +107,40 @@ void main() {
     expect(find.text('No channels found.'), findsOneWidget);
     expect(find.text('Retry'), findsNothing);
   });
+
+  testWidgets('exposes the full description in a tooltip', (tester) async {
+    const longDescription =
+        'A very long channel description that does not fit on one line '
+        'of the channel directory list tile subtitle.';
+    final channel = Channel(
+      id: 'c-2',
+      name: 'design',
+      description: longDescription,
+      organisationId: 'org-1',
+      isPrivate: false,
+      ownerId: 'u-1',
+      archived: false,
+      unreadCount: 0,
+      membersCount: 3,
+    );
+    await _pump(tester, [
+      [channel],
+    ]);
+
+    expect(find.text(longDescription), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is Tooltip && widget.message == longDescription,
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('shows no description tooltip when it is empty', (tester) async {
+    await _pump(tester, [
+      [_general],
+    ]);
+
+    expect(find.byType(Tooltip), findsNothing);
+  });
 }

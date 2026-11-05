@@ -68,13 +68,26 @@ void main() {
       );
     });
 
-    test('keeps link text and drops unknown tags', () {
+    test('keeps link text and drops link and span tags', () {
       expect(
         htmlMessageToMarkdown(
           '<p>See <a href="https://zedu.chat">this</a> <span>now</span></p>',
         ),
         'See this now',
       );
+    });
+
+    test('preserves angle-bracketed content that is not HTML', () {
+      expect(
+        htmlMessageToMarkdown('Use List<String> here'),
+        'Use List<String> here',
+      );
+      expect(
+        htmlMessageToMarkdown('Contact <user@example.com> today'),
+        'Contact <user@example.com> today',
+      );
+      expect(htmlMessageToMarkdown('<foo>bar</foo>'), '<foo>bar</foo>');
+      expect(htmlMessageToMarkdown('a < b and c > d'), 'a < b and c > d');
     });
   });
 }

@@ -27,7 +27,35 @@ void main() {
 
     expect(message.senderName, 'gold_salam');
     expect(message.avatarUrl, 'https://cdn.zedu.chat/default.png');
-    expect(message.text, 'Hi & welcome\nLine two\na\nb');
+    expect(message.text, 'Hi & welcome\nLine two\n• a\n• b');
+  });
+
+  group('ChannelMessage.fromJson preserves angle-bracketed content', () {
+    String textOf(String html) =>
+        ChannelMessage.fromJson({'message': html}).text;
+
+    test('keeps generic type parameters', () {
+      expect(textOf('Use List<String> here'), 'Use List<String> here');
+      expect(textOf('Map<String, int> counts'), 'Map<String, int> counts');
+    });
+
+    test('keeps angle-bracketed emails', () {
+      expect(
+        textOf('Contact <user@example.com> today'),
+        'Contact <user@example.com> today',
+      );
+    });
+
+    test('keeps mathematical comparisons', () {
+      expect(textOf('a < b and c > d'), 'a < b and c > d');
+    });
+
+    test('renders rich HTML as Markdown', () {
+      expect(
+        textOf('<p><strong>Hi</strong> <em>there</em> <code>x</code></p>'),
+        '**Hi** *there* `x`',
+      );
+    });
   });
 
   group('ChannelMessage.fromJson decodes HTML entities', () {

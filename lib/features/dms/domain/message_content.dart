@@ -34,12 +34,43 @@ const _blockTags = {
   'h6',
 };
 
+/// Tag names treated as real markup. Any `<...>` match whose tag name is not
+/// in this set is user content (generics like `List<String>`, angle-bracketed
+/// emails like `<user@example.com>`, unknown elements) and is kept as typed.
+const _knownTags = {
+  'strong',
+  'b',
+  'em',
+  'i',
+  's',
+  'del',
+  'strike',
+  'code',
+  'p',
+  'div',
+  'blockquote',
+  'pre',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'br',
+  'hr',
+  'ul',
+  'ol',
+  'li',
+  'a',
+  'span',
+};
+
 /// Turns message content sent from web or mobile, which arrives as HTML
 /// (`<p>Hello <strong>you</strong></p>`), into the Markdown the desktop chat
 /// renders (`Hello **you**`). Content without HTML tags, such as messages sent
 /// from desktop, is returned unchanged.
 String htmlMessageToMarkdown(String content) {
-  if (!_htmlTag.hasMatch(content)) return content;
+  if (!_htmlTag.hasMatch(content)) return _decodeEntities(content);
 
   final out = StringBuffer();
   // Ordered-list counters for the open lists; null marks a bullet list.
@@ -69,6 +100,13 @@ String htmlMessageToMarkdown(String content) {
 
     final closing = match.group(1) == '/';
     final tag = match.group(2)!.toLowerCase();
+    if (!_knownTags.contains(tag)) {
+      // Not real markup (e.g. List<String>, <user@example.com>): keep the
+      // matched text as typed instead of stripping it.
+      out.write(_decodeEntities(match.group(0)!));
+      afterMarker = false;
+      continue;
+    }
     final marker = _inlineMarkers[tag];
 
     if (marker != null) {
@@ -119,7 +157,10 @@ String _decodeEntities(String text) {
         name.substring(hex ? 2 : 1),
         radix: hex ? 16 : 10,
       );
-      if (code == null || code > 0x10FFFF) return match.group(0)!;
+      if (code == null) return match.group(0)!;
+      final isCharacter =
+          code > 0 && code <= 0x10FFFF && (code < 0xD800 || code > 0xDFFF);
+      if (!isCharacter) return match.group(0)!;
       return String.fromCharCode(code);
     }
     return _namedEntities[name.toLowerCase()] ?? match.group(0)!;

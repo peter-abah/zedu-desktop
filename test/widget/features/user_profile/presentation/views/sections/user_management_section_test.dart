@@ -231,4 +231,50 @@ void main() {
       expect(find.text(timestamp), findsNothing);
     });
   });
+
+  group('UserManagementSection row actions (Ziki #2320)', () {
+    testWidgets('edit and remove buttons name the member they affect', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        buildUnderTest(const [
+          TeamMember(
+            id: '1',
+            email: 'ada@example.com',
+            name: 'Ada',
+            role: 'User',
+            dateJoined: 'Oct 1, 2026',
+            status: TeamMemberStatus.active,
+          ),
+        ]),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byTooltip('Edit ada@example.com'), findsOneWidget);
+      expect(find.byTooltip('Remove ada@example.com'), findsOneWidget);
+    });
+
+    testWidgets('invite remove button names the invite it affects', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        buildUnderTest(const [
+          TeamMember(
+            id: '2',
+            email: 'invited@example.com',
+            name: 'Invited User',
+            role: 'User',
+            dateJoined: 'Oct 2, 2026',
+            status: TeamMemberStatus.pending,
+          ),
+        ]),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Invites'));
+      await tester.pumpAndSettle();
+
+      expect(find.byTooltip('Remove invited@example.com'), findsOneWidget);
+    });
+  });
 }
